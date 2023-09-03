@@ -1,8 +1,8 @@
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
-import re
 from colorama import init, Fore
+import threading
 
 # Initialize colorama for colored text
 init(autoreset=True)
@@ -13,7 +13,7 @@ def get_base_domain(url):
     return parsed_url.netloc
 
 # Function to crawl a URL and identify links with GET parameters
-def crawl_url(url, visited_urls, target_extensions, max_depth, get_params_file):
+def crawl_url(url, visited_urls, max_depth, get_params_file):
     try:
         print(f"Crawling URL: {url}")  # Print the current URL being crawled
 
@@ -29,13 +29,13 @@ def crawl_url(url, visited_urls, target_extensions, max_depth, get_params_file):
             # Add the URL to the set of visited URLs to avoid revisiting
             visited_urls.add(url)
 
-            # Parse the URL to check for target file extensions and GET parameters
+            # Parse the URL to check for file extensions and GET parameters
             parsed_url = urlparse(url)
-            file_extension = parsed_url.path.split('.')[-1]
+            path = parsed_url.path
             query_params = parsed_url.query
 
-            # Check if the URL matches the criteria
-            if file_extension in target_extensions and query_params:
+            # Check if the URL has a query string (GET parameters)
+            if query_params:
                 print(Fore.GREEN + f"URL with GET parameters found: {url}" + Fore.RESET)
                 with open(get_params_file, 'a') as file:
                     file.write(f"{url}\n")
@@ -47,7 +47,7 @@ def crawl_url(url, visited_urls, target_extensions, max_depth, get_params_file):
                 # Ensure the link is not already visited
                 absolute_url = urljoin(url, href)
                 if absolute_url not in visited_urls and max_depth > 0:
-                    crawl_url(absolute_url, visited_urls, target_extensions, max_depth - 1, get_params_file)
+                    crawl_url(absolute_url, visited_urls, max_depth - 1, get_params_file)
 
         else:
             print(f"Failed to retrieve {url}. Status code: {response.status_code}")
@@ -66,9 +66,6 @@ visited_urls = set()
 # Set the maximum depth for crawling (unlimited in this case)
 max_depth = float("inf")
 
-# Define the target file extensions to look for
-target_extensions = {"php", "asp", "aspx"}
-
 # Create a file to store URLs with GET parameters
 get_params_file = "urls_with_get_params.txt"
 open(get_params_file, 'w').close()  # Clear the file if it exists
@@ -78,9 +75,16 @@ try:
     with open(file_name, 'r') as file:
         starting_urls = [line.strip() for line in file]
 
-    # Start the crawl from the provided starting URLs
+    # Create a thread for each starting URL
+    threads = []
     for starting_url in starting_urls:
-        crawl_url(starting_url, visited_urls, target_extensions, max_depth, get_params_file)
+        thread = threading.Thread(target=crawl_url, args=(starting_url, visited_urls, max_depth, get_params_file))
+        threads.append(thread)
+        thread.start()
+
+    # Wait for all threads to finish
+    for thread in threads:
+        thread.join()
 
 except FileNotFoundError:
     print(f"File '{file_name}' not found.")
